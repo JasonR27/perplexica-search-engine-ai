@@ -214,8 +214,12 @@ class ConfigManager {
         newProvider.hash = hash;
         delete newProvider.required;
 
+        // 2026-10-30 (ht_9d419b01): also dedupe by provider TYPE. Hash-only
+        // dedupe re-appended a fresh Gemini + Transformers block on every
+        // boot whenever the stored key was a ${ENV} placeholder (hash differs),
+        // which produced 3 duplicate Gemini providers in data/config.json.
         const exists = this.currentConfig.modelProviders.find(
-          (p) => p.hash === hash,
+          (p) => p.hash === hash || p.type === newProvider.type,
         );
 
         if (!exists) {

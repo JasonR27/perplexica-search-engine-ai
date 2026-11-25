@@ -13,5 +13,46 @@ server:
   secret_key: 'a2fb23f1b02e6ee83875b09826990de0f6bd908b6638e8c10277d415f6ab852b' # Is overwritten by ${SEARXNG_SECRET}
 
 engines:
+  # 2026-10-09: the default engine set is almost entirely unusable from this
+  # host. Measured directly against http://localhost:8844/search?format=json:
+  #   duckduckgo -> CAPTCHA
+  #   brave      -> "Suspended: too many requests"
+  #   aol        -> HTTP error
+  #   karmasearch-> "Suspended: access denied"
+  #   startpage  -> "Suspended: CAPTCHA"
+  #   wolframalpha -> timeout
+  #   google/bing/mojeek/qwant/wikipedia -> 0 results (blocked)
+  # Verified WORKING and returning results:
+  #   github (30), arxiv (10), stackoverflow (10)
+  # Leaving the broken engines enabled costs ~2 s per query in doomed retries
+  # and pushes SearXNG past the Vane deadline, so they are explicitly disabled.
   - name: wolframalpha
+    disabled: true
+  - name: duckduckgo
+    disabled: true
+  - name: brave
+    disabled: true
+  - name: aol
+    disabled: true
+  - name: karmasearch
+    disabled: true
+  - name: karmasearch videos
+    disabled: true
+  - name: startpage
+    disabled: true
+  - name: mojeek
+    disabled: true
+  - name: qwant
+    disabled: true
+  - name: google
+    disabled: true
+  - name: bing
+    disabled: true
+  - name: wikipedia
+    disabled: true
+  - name: github
+    disabled: false
+  - name: arxiv
+    disabled: false
+  - name: stackoverflow
     disabled: false

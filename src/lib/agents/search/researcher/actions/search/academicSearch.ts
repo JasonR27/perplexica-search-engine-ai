@@ -28,7 +28,8 @@ const academicSearchAction: ResearchAction<typeof schema> = {
   enabled: (config) =>
     config.sources.includes('academic') &&
     config.classification.classification.skipSearch === false &&
-    config.classification.classification.academicSearch === true,
+    (config.classification.classification.academicSearch === true ||
+      !config.sources.includes('web')),
   execute: async (input, additionalConfig) => {
     input.queries = (
       Array.isArray(input.queries) ? input.queries : [input.queries]
@@ -42,6 +43,7 @@ const academicSearchAction: ResearchAction<typeof schema> = {
 
     const results = await executeSearch({
       llm: additionalConfig.llm,
+      roleLLMs: additionalConfig.roleLLMs,
       embedding: additionalConfig.embedding,
       mode: additionalConfig.mode,
       queries: input.queries,

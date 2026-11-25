@@ -144,7 +144,9 @@ const scrapeURLAction: ResearchAction<typeof schema> = {
             );
           }
 
-          const chunks = splitText(scraped.content, 4000, 500);
+          const chunks = splitText(scraped.content, 4000, 500).slice(0, 6);
+          const extractorLlm =
+            additionalConfig.roleLLMs?.extractor ?? additionalConfig.llm;
 
           let accumulatedContent = '';
 
@@ -152,7 +154,7 @@ const scrapeURLAction: ResearchAction<typeof schema> = {
             try {
               await Promise.all(
                 chunks.map(async (chunk) => {
-                  const extracted = await additionalConfig.llm.generateObject<
+                  const extracted = await extractorLlm.generateObject<
                     typeof extractorSchema
                   >({
                     messages: [

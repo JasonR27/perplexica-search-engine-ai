@@ -1,9 +1,10 @@
 import BaseEmbedding from '@/lib/models/base/embedding';
+import { withEmbeddingCache } from '@/lib/models/base/embeddingCache';
 import BaseLLM from '@/lib/models/base/llm';
 import { searchSearxng, SearxngSearchOptions } from '@/lib/searxng';
 import SessionManager from '@/lib/session';
 import { Chunk, ResearchBlock, SearchResultsResearchBlock } from '@/lib/types';
-import { SearchAgentConfig } from '../../../types';
+import { SearchAgentConfig, SearchRoleLLMs } from '../../../types';
 import computeSimilarity from '@/lib/utils/computeSimilarity';
 import z from 'zod';
 import Scraper from '@/lib/scraper';
@@ -16,8 +17,15 @@ export const executeSearch = async (input: {
   researchBlock: ResearchBlock;
   session: InstanceType<typeof SessionManager>;
   llm: BaseLLM<any>;
+  roleLLMs?: SearchRoleLLMs;
   embedding: BaseEmbedding<any>;
 }) => {
+  // T3/T4 hybrid cache — non-invasive decorator, graceful degrade if Neo4j down (1024d strict)
+  (input as any).embedding = withEmbeddingCache(
+    input.embedding,
+    (input.embedding as any)?.config?.model || (input.embedding as any)?.config?.modelName || 'bge-m3:latest'
+  );
+
   const researchBlock = input.researchBlock;
 
   researchBlock.data.subSteps.push({
@@ -269,7 +277,8 @@ export const executeSearch = async (input: {
         ),
     });
 
-    const pickerResponse = await input.llm.generateObject<typeof pickerSchema>({
+    const pickerLlm = input.roleLLMs?.picker ?? input.llm;
+    const pickerResponse = await pickerLlm.generateObject<typeof pickerSchema>({
       schema: pickerSchema,
       messages: [
         {
@@ -374,12 +383,13 @@ export const executeSearch = async (input: {
           if (!scrapedData) return;
 
           let accumulatedContent = '';
-          const chunks = splitText(scrapedData.content, 4000, 500);
+          const chunks = splitText(scrapedData.content, 4000, 500).slice(0, 6);
+          const extractorLlm = input.roleLLMs?.extractor ?? input.llm;
 
           await Promise.all(
             chunks.map(async (chunk) => {
               try {
-                const extractorOutput = await input.llm.generateObject<
+                const extractorOutput = await extractorLlm.generateObject<
                   typeof extractorSchema
                 >({
                   schema: extractorSchema,

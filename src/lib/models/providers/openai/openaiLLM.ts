@@ -195,11 +195,12 @@ class OpenAILLM extends BaseLLM<OpenAIConfig> {
   }
 
   async generateObject<T>(input: GenerateObjectInput): Promise<T> {
-    const response = await this.openAIClient.chat.completions.parse({
-      messages: this.convertToOpenAIMessages(input.messages),
+    const baseMessages = this.convertToOpenAIMessages(input.messages);
+    const request = {
+      messages: baseMessages,
       model: this.config.model,
       temperature:
-        input.options?.temperature ?? this.config.options?.temperature ?? 1.0,
+        input.options?.temperature ?? this.config.options?.temperature ?? 0.1,
       top_p: input.options?.topP ?? this.config.options?.topP,
       max_completion_tokens:
         input.options?.maxTokens ?? this.config.options?.maxTokens,
@@ -209,24 +210,103 @@ class OpenAILLM extends BaseLLM<OpenAIConfig> {
         this.config.options?.frequencyPenalty,
       presence_penalty:
         input.options?.presencePenalty ?? this.config.options?.presencePenalty,
-      response_format: zodResponseFormat(input.schema, 'object'),
-    });
+    };
 
-    if (response.choices && response.choices.length > 0) {
+    const baseUrlLower = (this.config.baseURL || '').toLowerCase();
+    const modelLower = (this.config.model || '').toLowerCase();
+    const isNvidia = baseUrlLower.includes('integrate.api.nvidia.com');
+    const isOpenRouter = baseUrlLower.includes('openrouter.ai');
+    const isGemma = modelLower.includes('gemma');
+
+    // OpenRouter free models verified in 2026-10-29 reconciliation that advertise
+    // native `structured_outputs` + `response_format`. Other OpenRouter free slugs
+    // reject `response_format` with HTTP 400/404 and require prompt-guided JSON.
+    const openRouterStructuredModels = [
+      'nvidia/nemotron-3.5-super-vl:free',
+      'dots-studio/dots-3-note-preview:free',
+      'xingchen-agi/xing4.0-29b-a4b:free',
+      'liquid/lfm-2.5-2.6b:free',
+      'recursive/flint-v1.0:free',
+      'openrouter/free',
+    ];
+    const openRouterSupportsSchema =
+      !isOpenRouter || openRouterStructuredModels.includes(modelLower);
+
+    const parseAndValidate = (rawContent: string | null | undefined): T => {
+      if (!rawContent || !rawContent.trim()) {
+        throw new Error(
+          `Empty structured response from model ${this.config.model}`,
+        );
+      }
+      const repaired = repairJson(rawContent, { extractJson: true }) as string;
+      return input.schema.parse(JSON.parse(repaired)) as T;
+    };
+
+    const isFatalUpstreamError = (err: any): boolean => {
+      const status = Number(err?.status ?? err?.statusCode ?? 0);
+      if ([401, 402, 403, 429, 500, 502, 503, 504].includes(status)) {
+        return true;
+      }
+      const msg = String(err?.message || '').toLowerCase();
+      return /\b(401|402|403|429|503)\b|rate limit|quota|monthly usage limit|unauthorized/.test(
+        msg,
+      );
+    };
+
+    // Tier A: strict JSON schema when supported by endpoint + model
+    if (!isNvidia && !isGemma && openRouterSupportsSchema) {
       try {
-        return input.schema.parse(
-          JSON.parse(
-            repairJson(response.choices[0].message.content!, {
-              extractJson: true,
-            }) as string,
-          ),
-        ) as T;
-      } catch (err) {
-        throw new Error(`Error parsing response from OpenAI: ${err}`);
+        const response = await this.openAIClient.chat.completions.parse({
+          ...request,
+          response_format: zodResponseFormat(input.schema, 'object'),
+        });
+        if (response.choices && response.choices.length > 0) {
+          return parseAndValidate(response.choices[0].message.content);
+        }
+      } catch (err: any) {
+        if (isFatalUpstreamError(err)) throw err;
       }
     }
 
-    throw new Error('No response from OpenAI');
+    // Tier B: json_object mode for NVIDIA NIM and response_format-capable endpoints
+    if (isNvidia) {
+      try {
+        const response = await this.openAIClient.chat.completions.create({
+          ...request,
+          response_format: { type: 'json_object' },
+        });
+        if (response.choices && response.choices.length > 0) {
+          return parseAndValidate(response.choices[0].message.content);
+        }
+      } catch (err: any) {
+        if (isFatalUpstreamError(err)) throw err;
+      }
+    }
+
+    // Tier C: universal prompt-guided JSON extraction + repairJson + Zod validation
+    const jsonHintMessages = [
+      ...baseMessages,
+      {
+        role: 'user' as const,
+        content:
+          'IMPORTANT: Reply with ONLY a single valid raw JSON object matching the requested fields. Do not wrap in markdown code fences or prose.',
+      },
+    ];
+    const fallbackResp = await this.openAIClient.chat.completions.create({
+      ...request,
+      messages: jsonHintMessages,
+    });
+    if (fallbackResp.choices && fallbackResp.choices.length > 0) {
+      try {
+        return parseAndValidate(fallbackResp.choices[0].message.content);
+      } catch (err) {
+        throw new Error(
+          `Error parsing structured JSON from ${this.config.model}: ${err}`,
+        );
+      }
+    }
+
+    throw new Error(`No response from model ${this.config.model}`);
   }
 
   async *streamObject<T>(input: GenerateObjectInput): AsyncGenerator<T> {

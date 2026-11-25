@@ -6,10 +6,23 @@ import { ChatTurnMessage, Chunk } from '@/lib/types';
 
 export type SearchSources = 'web' | 'discussions' | 'academic';
 
+export type SearchInferenceRole =
+  | 'classifier'
+  | 'widget'
+  | 'researcher'
+  | 'picker'
+  | 'extractor'
+  | 'writer';
+
+export type SearchRoleLLMs = Partial<
+  Record<SearchInferenceRole, BaseLLM<any>>
+>;
+
 export type SearchAgentConfig = {
   sources: SearchSources[];
   fileIds: string[];
   llm: BaseLLM<any>;
+  roleLLMs?: SearchRoleLLMs;
   embedding: BaseEmbedding<any>;
   mode: 'speed' | 'balanced' | 'quality';
   systemInstructions: string;
@@ -64,6 +77,7 @@ export type ClassifierOutput = {
 
 export type AdditionalConfig = {
   llm: BaseLLM<any>;
+  roleLLMs?: SearchRoleLLMs;
   embedding: BaseEmbedding<any>;
   session: SessionManager;
 };

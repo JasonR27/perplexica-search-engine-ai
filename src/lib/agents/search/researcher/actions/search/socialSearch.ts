@@ -28,7 +28,8 @@ const socialSearchAction: ResearchAction<typeof schema> = {
   enabled: (config) =>
     config.sources.includes('discussions') &&
     config.classification.classification.skipSearch === false &&
-    config.classification.classification.discussionSearch === true,
+    (config.classification.classification.discussionSearch === true ||
+      !config.sources.includes('web')),
   execute: async (input, additionalConfig) => {
     input.queries = (
       Array.isArray(input.queries) ? input.queries : [input.queries]
@@ -42,6 +43,7 @@ const socialSearchAction: ResearchAction<typeof schema> = {
 
     const results = await executeSearch({
       llm: additionalConfig.llm,
+      roleLLMs: additionalConfig.roleLLMs,
       embedding: additionalConfig.embedding,
       mode: additionalConfig.mode,
       queries: input.queries,

@@ -97,6 +97,7 @@ const webSearchAction: ResearchAction<typeof actionSchema> = {
 
     const results = await executeSearch({
       llm: additionalConfig.llm,
+      roleLLMs: additionalConfig.roleLLMs,
       embedding: additionalConfig.embedding,
       mode: additionalConfig.mode,
       queries: input.queries,

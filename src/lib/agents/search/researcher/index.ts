@@ -65,7 +65,9 @@ class Researcher {
         input.config.fileIds,
       );
 
-      const actionStream = input.config.llm.streamText({
+      const researcherLlm =
+        input.config.roleLLMs?.researcher ?? input.config.llm;
+      const actionStream = researcherLlm.streamText({
         messages: [
           {
             role: 'system',
@@ -163,6 +165,7 @@ class Researcher {
 
       const actionResults = await ActionRegistry.executeAll(finalToolCalls, {
         llm: input.config.llm,
+        roleLLMs: input.config.roleLLMs,
         embedding: input.config.embedding,
         session: session,
         researchBlockId: researchBlockId,
